@@ -1,0 +1,100 @@
+import org.json.JSONObject
+
+data class User(val name: String, val age: Int) {
+    fun toJson(): String {
+        val jsonObject = JSONObject()
+        jsonObject.put("name", name)
+        jsonObject.put("age", age)
+        return jsonObject.toString()
+    }
+
+    companion object {
+        fun fromJson(json: String): User {
+            val jsonObject = JSONObject(json)
+            return User(
+                jsonObject.getString("name"),
+                jsonObject.getInt("age")
+            )
+        }
+    }
+}
+
+------------
+
+private fun handleClientConnection(clientSocket: Socket) {
+    GlobalScope.launch(Dispatchers.IO) {
+        try {
+            // Reading JSON input from the client
+            val inputReader = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
+            val clientJson = inputReader.readLine()
+            val clientUser = User.fromJson(clientJson)
+            println("Received user from client: $clientUser")
+
+            // Creating a response object
+            val responseUser = User("Hello, ${clientUser.name}", clientUser.age)
+            val responseJson = responseUser.toJson()
+
+            // Sending the response JSON back to the client
+            val outputWriter = PrintWriter(clientSocket.getOutputStream(), true)
+            outputWriter.println(responseJson)
+
+            println("Sent response to client: $responseJson")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            clientSocket.close()
+        }
+    }
+}
+
+-------
+
+import 'dart:convert';
+
+class User {
+  final String name;
+  final int age;
+
+  User({required this.name, required this.age});
+
+  factory User.fromJson(String jsonString) {
+    final json = jsonDecode(jsonString);
+    return User(
+      name: json['name'],
+      age: json['age'],
+    );
+  }
+
+  String toJson() {
+    final json = {
+      'name': name,
+      'age': age,
+    };
+    return jsonEncode(json);
+  }
+}
+
+-------
+
+import 'dart:convert';
+import 'dart:io';
+
+void main() async {
+  final socket = await Socket.connect('192.168.1.2', 8080); // Replace with your server's IP and port
+  print('Connected to: ${socket.remoteAddress.address}:${socket.remotePort}');
+
+  // Create and send the User object as JSON
+  final user = User(name: 'Tony Stark', age: 45);
+  socket.write('${user.toJson()}\n');
+
+  // Listen for the response from the server
+  socket.listen((data) {
+    final responseJson = utf8.decode(data);
+    final responseUser = User.fromJson(responseJson);
+    print('Server: ${responseUser.name}, Age: ${responseUser.age}');
+  });
+
+  // Close the connection after some time
+  await Future.delayed(Duration(seconds: 5));
+  socket.close();
+}

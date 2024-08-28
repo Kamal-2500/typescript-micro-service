@@ -98,3 +98,117 @@ void main() async {
   await Future.delayed(Duration(seconds: 5));
   socket.close();
 }
+
+---------------
+
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.PrintWriter
+import java.net.ServerSocket
+import java.net.Socket
+
+data class Client(val name: String, val socket: Socket)
+
+class ServerSocketHandler : ServerApi {
+    private var serverSocket: ServerSocket? = null
+    private var isRunning: Boolean = false
+    private val clients = mutableListOf<Client>() // Store client details including name
+
+    override fun startServer(request: StartServerRequest) {
+        val port = request.port
+        Thread {
+            try {
+                serverSocket = ServerSocket(port)
+                isRunning = true
+                println("Server started on port $port")
+
+                while (isRunning) {
+                    val clientSocket = serverSocket!!.accept()
+                    println("Client connected: ${clientSocket.inetAddress.hostAddress}")
+
+                    // Assign a default name to the client and add to the list
+                    val defaultName = "Client-${clientSocket.inetAddress.hostAddress}"
+                    val newClient = Client(defaultName, clientSocket)
+                    clients.add(newClient)
+
+                    // Spawn a new thread to handle each client
+                    Thread {
+                        handleClientConnection(newClient)
+                    }.start()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }.start()
+    }
+
+    private fun handleClientConnection(client: Client) {
+        try {
+            val inputReader = BufferedReader(InputStreamReader(client.socket.getInputStream()))
+            val outputWriter = PrintWriter(client.socket.getOutputStream(), true)
+
+            // Ask for the client's name upon connection
+            outputWriter.println("Please enter your name:")
+            val clientName = inputReader.readLine()
+            if (clientName != null && clientName.isNotEmpty()) {
+                // Update the client's name
+                clients.find { it.socket == client.socket }?.apply {
+                    clients.remove(this)
+                    clients.add(Client(clientName, client.socket))
+                }
+                println("Client named: $clientName")
+            }
+
+            // Broadcast the new client joining
+            broadcastMessage("$clientName has joined the chat")
+
+            // Read and process messages from the client
+            while (true) {
+                val clientMessage = inputReader.readLine()
+                if (clientMessage == null) {
+                    // Client disconnected
+                    println("$clientName disconnected")
+                    break
+                }
+
+                // Broadcast the message to all clients
+                broadcastMessage("$clientName: $clientMessage")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            // Ensure the client socket is closed and removed from the list when disconnected
+            clients.removeIf { it.socket == client.socket }
+            client.socket.close()
+            println("Connection closed with client: ${client.socket.inetAddress.hostAddress}")
+        }
+    }
+
+    private fun broadcastMessage(message: String) {
+        println("Broadcasting message: $message")
+        clients.forEach { client ->
+            try {
+                val outputWriter = PrintWriter(client.socket.getOutputStream(), true)
+                outputWriter.println(message)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    override fun stopServer() {
+        isRunning = false
+        clients.forEach { it.socket.close() }
+        serverSocket?.close()
+        println("Server stopped")
+    }
+
+    override fun sendMessage(message: ClientMessage) {
+        // Implement if needed
+    }
+
+    override fun receiveMessage(): ClientMessage {
+        // Implement if needed
+        return ClientMessage("")
+    }
+}
